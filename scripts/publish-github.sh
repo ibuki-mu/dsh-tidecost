@@ -32,6 +32,21 @@ if [ -z "$TOKEN" ] && [ -f "$HOME/.dsh/github-token" ]; then
   TOKEN="$(tr -d '\r\n' < "$HOME/.dsh/github-token")"
 fi
 
+# 格式预检：避免把占位符/半截内容当 token 去打 API（GitHub 只会回 401 Bad credentials）
+if [ -n "$TOKEN" ]; then
+  case "$TOKEN" in
+    github_pat_*|ghp_*|gho_*|ghu_*|ghs_*|github_pat*|ghp*) ;;
+    *)
+      echo "publish: 凭据格式不像 GitHub token（应以 github_pat_ 或 ghp_ 开头，长度 40+）；请重新生成并写入" >&2
+      echo "publish: 常见错误：把占位符 <your_token> 或 token 名称写进了 ~/.dsh/github-token" >&2
+      exit 1
+      ;;
+  esac
+  case "${#TOKEN}" in
+    [0-3][0-9]) echo "publish: 凭据长度仅 ${#TOKEN} 字符，明显不是完整 token" >&2; exit 1 ;;
+  esac
+fi
+
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   OWNER="$(gh api user --jq .login)"
   echo "== 使用 gh 登录账号：$OWNER"
