@@ -1,5 +1,5 @@
 # dsh-tidecost
-
+小孩子用ai做着玩的（x
 > DeepSeek Harness 侧边栏插件：**余额 / 峰谷价 / 逐步用量花费 / 预算预警** 一体化面板。
 >
 > ⚠️ **仅支持 DeepSeek API**（provider `deepseek-official`）。
