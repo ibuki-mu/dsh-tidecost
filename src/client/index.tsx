@@ -544,6 +544,10 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
                 </div>
               </div>
             )}
+            <div className="dshb-hint" style={{ marginTop: 2 }}>
+              ⚠️ 仅支持 DeepSeek API（deepseek-official）：余额取 DeepSeek 账户，
+              峰谷价与单价均为官方口径；其他 provider 的费用为 Flash 兜底估算，仅供参考。
+            </div>
           </div>
         </div>
       )}
