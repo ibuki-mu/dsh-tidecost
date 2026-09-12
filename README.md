@@ -1,6 +1,9 @@
-# dsh-balance
+# dsh-tidecost
 
 > DeepSeek Harness 侧边栏插件：**余额 / 峰谷价 / 逐步用量花费 / 预算预警** 一体化面板。
+>
+> 命名：**tide**（峰谷潮汐价）+ **cost**（花费/预算）。原名 `dsh-balance` 已更名；
+> 旧数据目录与浏览器内的旧设置键会**自动迁移**（见下文）。
 
 在 DSH Web 侧边栏脚部新增「余额」模块：实时显示账户余额、当前会话每一步的 token 用量与花费、DeepSeek 官方峰谷价档位与倒计时、预算设定与三级预警，并在峰价时段每日首次对话前弹窗确认。
 
@@ -27,7 +30,7 @@
 | 2026-09-10 12:00 起 | Flash 系列降价（`deepseek-flash` / `deepseek-v4-flash` / `-vision-exp`）：谷 0.02 / 1 / 4，峰 0.04 / 2 / 8（元/百万 token）；Pro 未调整 |
 
 - 计费口径：`input×未命中价 + output×输出价 + (cacheRead + cacheWrite)×命中价`（元/百万 token）。
-- **节假日**：官方按谷价计费。在 `$DSH_HOME/dsh-balance/holidays.json` 写北京日期数组（如 `["2026-10-01"]`）即可**热更生效**（无需重启），也可用插件 Config 的 `holidays`。
+- **节假日**：官方按谷价计费。在 `$DSH_HOME/dsh-tidecost/holidays.json` 写北京日期数组（如 `["2026-10-01"]`）即可**热更生效**（无需重启），也可用插件 Config 的 `holidays`。
 - 官方调价只需更新 `src/shared/tide.ts` 的价格纪年常量（文件头有说明）。
 
 ## 安装
@@ -36,10 +39,10 @@
 
 ```sh
 # 1) 官方装配（GitHub）
-dsh plugin --profile web add github:<owner>/dsh-balance
+dsh plugin --profile web add github:<owner>/dsh-tidecost
 
 # 或本地开发目录
-dsh plugin --profile web add link:/path/to/dsh-balance
+dsh plugin --profile web add link:/path/to/dsh-tidecost
 
 # 2) 重启 dsh web 生效（bundle 插件无进程内热重载）
 ```
@@ -54,7 +57,7 @@ dsh plugin --profile web add link:/path/to/dsh-balance
 | `apiBaseUrl` | `https://api.deepseek.com` | 余额接口基址（不用于模型调用） |
 | `balanceCacheMs` | `60000` | 余额缓存时长 |
 | `holidays` | `[]` | 节假日北京日期名单（YYYY-MM-DD）；`holidays.json` 优先 |
-| `dataDir` | `$DSH_HOME/dsh-balance` | 数据目录 |
+| `dataDir` | `$DSH_HOME/dsh-tidecost` | 数据目录（旧 dsh-balance 自动迁移） |
 
 数据文件（均在 `dataDir`）：
 
@@ -71,11 +74,11 @@ dsh plugin --profile web add link:/path/to/dsh-balance
 
 | 端点 | 说明 |
 |---|---|
-| `GET /dsh-balance/api/overview?session=<id>` | 面板快照：余额、会话逐步用量、预算、峰谷相位、节假日、预警 |
-| `GET /dsh-balance/api/balance?refresh=1` | 余额（强制刷新） |
-| `GET /dsh-balance/api/budget?session=<id>` | 该会话生效预算 + 全局项 |
-| `POST /dsh-balance/api/budget?session=<id>` | 保存：`sessionBudgetCny` 仅写该会话；`{resetSession:true}` 恢复默认；不带 `session` 则更新默认会话预算 |
-| `GET /dsh-balance/api/session/<id>/usage` | 单会话逐步用量 |
+| `GET /dsh-tidecost/api/overview?session=<id>` | 面板快照：余额、会话逐步用量、预算、峰谷相位、节假日、预警 |
+| `GET /dsh-tidecost/api/balance?refresh=1` | 余额（强制刷新） |
+| `GET /dsh-tidecost/api/budget?session=<id>` | 该会话生效预算 + 全局项 |
+| `POST /dsh-tidecost/api/budget?session=<id>` | 保存：`sessionBudgetCny` 仅写该会话；`{resetSession:true}` 恢复默认；不带 `session` 则更新默认会话预算 |
+| `GET /dsh-tidecost/api/session/<id>/usage` | 单会话逐步用量 |
 
 ## 隐私
 
