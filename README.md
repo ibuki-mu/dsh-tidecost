@@ -2,9 +2,21 @@
 
 > DeepSeek Harness 侧边栏插件：**余额 / 峰谷价 / 逐步用量花费 / 预算预警** 一体化面板。
 >
+> ⚠️ **仅支持 DeepSeek API**（provider `deepseek-official`）。
+>
 > 旧数据目录与浏览器内的旧设置键会**自动迁移**（见下文）。
 
 在 DSH Web 侧边栏脚部新增「余额」模块：实时显示账户余额、当前会话每一步的 token 用量与花费、DeepSeek 官方峰谷价档位与倒计时、预算设定与三级预警，并在峰价时段每日首次对话前弹窗确认。
+
+## 支持范围与限制
+
+| 项 | 支持情况 |
+|---|---|
+| Provider | **仅 DeepSeek 官方 API**（`deepseek-official`）：余额接口 `GET /user/balance`、峰谷时段与价格纪年均来自 DeepSeek 官方口径 |
+| 模型 | `deepseek-flash`（V4.1）、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`；未知名模型按 **Flash 价兜底** |
+| 其他 provider（OpenAI / Anthropic / pi-ai / 自建网关等） | **不适用**：账户余额取的是 DeepSeek 账户；费用会按 Flash 兜底价估算，数值仅供参照、不代表实际账单 |
+| 图片 token | 以官方 `usage` 为准；`vision-exp` 的图片按官方像素折算规则计入 input |
+| 计费准确性 | 价格表内置官方公告口径；官方调价后需同步 `src/shared/tide.ts`，面板会提示价格可能过期 |
 
 ## 功能
 
