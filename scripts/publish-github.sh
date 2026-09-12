@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 按 DeepSeek Harness 生态约定把本插件发布到 GitHub：
-#   创建仓库（若不存在）→ 推送当前分支 → 推送标签（含 TAG 指定的版本）。
+#   创建仓库（若不存在）→ 推送当前分支 → 推送标签 → 设置 `dsh-plugin` 等话题。
 #
 # 凭据来源（按优先级，凭据只用于进程环境/请求头，绝不写入 .git/config 或仓库）：
 #   1) gh CLI 已登录
@@ -11,6 +11,7 @@
 #   bash scripts/publish-github.sh                     # 公开仓库 dsh-tidecost
 #   VISIBILITY=private bash scripts/publish-github.sh
 #   TAG=v0.1.0 bash scripts/publish-github.sh
+#   TOPICS=dsh-plugin,deepseek-harness bash scripts/publish-github.sh
 set -euo pipefail
 
 REPO_NAME="${REPO_NAME:-dsh-tidecost}"
@@ -54,6 +55,8 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     --source "$ROOT" --remote origin --push
   git push origin --tags 2>/dev/null || true
   [ -n "${TAG:-}" ] && git push origin "$TAG" || true
+  # DSH 生态约定：仓库带 dsh-plugin 话题
+  gh repo edit "$OWNER/$REPO_NAME" --add-topic dsh-plugin --add-topic deepseek-harness 2>/dev/null || true
   echo "== 完成：https://github.com/$OWNER/$REPO_NAME"
   exit 0
 fi
@@ -64,7 +67,8 @@ publish: 缺少 GitHub 凭据。任选其一后重试：
   1) 安装并登录 gh CLI：  gh auth login
   2) 导出环境变量：       export GH_TOKEN=<PAT>
   3) 写入凭据文件：       umask 077; echo '<PAT>' > ~/.dsh/github-token
-PAT 需具备：Contents=write；首次建仓还需 Administration=write（或先在 GitHub 手动建空仓）。
+PAT 权限：Contents=write（推送）；Administration=write（建仓 + 设置话题，
+不加也能推送，但话题需在 GitHub UI 手动添加）。
 EOF
   exit 1
 fi
@@ -103,6 +107,21 @@ git -c credential.helper="$CRED_HELPER" push -u origin "$BRANCH"
 git -c credential.helper="$CRED_HELPER" push origin --tags
 if [ -n "${TAG:-}" ]; then
   git -c credential.helper="$CRED_HELPER" push origin "$TAG"
+fi
+
+# ── 仓库话题（DSH 生态约定：dsh-plugin）────────────────────────────────────
+# 话题写入需要 Administration=write；失败只告警，不影响推送结果。
+TOPICS="${TOPICS:-dsh-plugin,deepseek-harness,deepseek}"
+TOPICS_JSON="$(printf '%s' "$TOPICS" | awk -F, '{printf "["; for (i=1;i<=NF;i++) printf "%s\"%s\"", (i>1?",":""), $i; printf "]"}')"
+if curl -fsS -o /dev/null -X PUT \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Accept: application/vnd.github+json" \
+     -H "X-GitHub-Api-Version: 2022-11-28" \
+     "https://api.github.com/repos/$OWNER/$REPO_NAME/topics" \
+     -d "{\"names\":$TOPICS_JSON}"; then
+  echo "== 已设置话题：$TOPICS"
+else
+  echo "!! 设置话题失败（token 缺少 Administration=write）——请在仓库 About → Topics 手动添加：$TOPICS" >&2
 fi
 
 echo "== 完成：https://github.com/$OWNER/$REPO_NAME"

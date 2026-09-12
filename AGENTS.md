@@ -40,3 +40,10 @@
 bash scripts/publish-github.sh          # 需要 gh 已登录，或 ~/.dsh/github-token / GH_TOKEN
 git push origin --tags                  # 发布版本 tag（如 v0.1.0）
 ```
+
+**仓库话题（必须）**：仓库需带 `dsh-plugin` 话题（DSH 生态检索约定），
+默认还会加 `deepseek-harness`、`deepseek`。
+
+- `scripts/publish-github.sh` 会尝试自动设置（`TOPICS=...` 可覆盖）；
+- 自动设置需要 token 具备 **Administration = Read and write**；若权限不足，
+  脚本只告警不失败，请在仓库 **About → Topics** 手动添加 `dsh-plugin`。
