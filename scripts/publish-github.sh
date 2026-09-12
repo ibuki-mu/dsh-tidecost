@@ -103,6 +103,20 @@ CRED_HELPER='!f() { echo "username=x-access-token"; echo "password=$DSH_BALANCE_
 
 git remote remove origin 2>/dev/null || true
 git remote add origin "https://github.com/$OWNER/$REPO_NAME.git"
+
+# 推送前同步远端：GitHub 网页上的改动会让本地推送被拒（non-fast-forward）。
+# 这里先 fetch，若远端有我方缺失的提交则 rebase 到其上（保留双方提交）；冲突则中止。
+if git -c credential.helper="$CRED_HELPER" fetch --quiet origin "$BRANCH" 2>/dev/null; then
+  if ! git merge-base --is-ancestor "origin/$BRANCH" HEAD; then
+    echo "== 远端 $BRANCH 有本地缺失的提交，先 rebase 到 origin/$BRANCH"
+    if ! git rebase "origin/$BRANCH"; then
+      git rebase --abort 2>/dev/null || true
+      echo "publish: rebase 冲突，已中止（本地保持原状）；请手动处理后重试" >&2
+      exit 1
+    fi
+  fi
+fi
+
 git -c credential.helper="$CRED_HELPER" push -u origin "$BRANCH"
 git -c credential.helper="$CRED_HELPER" push origin --tags
 if [ -n "${TAG:-}" ]; then
