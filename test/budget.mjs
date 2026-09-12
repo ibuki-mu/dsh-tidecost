@@ -1,9 +1,10 @@
 /**
- * dsh-balance 会话预算隔离自检（直接驱动打包后的 host 插件，无需运行中的 dsh）。
+ * dsh-tidecost 会话预算隔离 + 数据目录迁移自检
+ * （直接驱动打包后的 host 插件，无需运行中的 dsh）。
  * 运行：node test/budget.mjs（先构建 host 生成 lib/index.js）
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as plugin from '../lib/index.js'
@@ -11,23 +12,30 @@ import * as plugin from '../lib/index.js'
 let n = 0
 function check(name, fn) { fn(); n += 1; console.log('✓', name) }
 
-// ── 伪 cordis 环境：捕获 webServer 路由，其余依赖最小桩 ────────────────────
-let route = null
-const ctx = {
-  logger: { info() {}, warn() {}, error() {} },
-  credentials: { resolve: async () => undefined }, // 未配置 key：余额返回 no_api_key，不联网
-  sessions: { get: () => undefined, list: () => [] },
-  webServer: { register: (r) => { route = r; return () => {} } },
-  tools: { register: () => () => {} },
-  effect: (fn) => fn(),
-  on: () => () => {},
+/** 伪 cordis 环境：捕获 webServer 路由；可选注入 DSH_HOME 以测试数据目录迁移。 */
+function setup({ dataDir = '', dshHome = null } = {}) {
+  let route = null
+  const ctx = {
+    logger: { info() {}, warn() {}, error() {} },
+    credentials: { resolve: async () => undefined }, // 未配置 key：不联网
+    sessions: { get: () => undefined, list: () => [] },
+    webServer: { register: (r) => { route = r; return () => {} } },
+    tools: { register: () => () => {} },
+    effect: (fn) => fn(),
+    on: () => () => {},
+  }
+  const prevHome = process.env.DSH_HOME
+  if (dshHome) process.env.DSH_HOME = dshHome
+  plugin.apply(ctx, { apiBaseUrl: 'https://api.deepseek.com', balanceCacheMs: 60000, dataDir, holidays: [] })
+  if (dshHome) {
+    if (prevHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = prevHome
+  }
+  assert.ok(route && route.path === '/dsh-tidecost/api', 'api route registered')
+  return route
 }
 
-const dataDir = mkdtempSync(join(tmpdir(), 'dshb-budget-'))
-plugin.apply(ctx, { apiBaseUrl: 'https://api.deepseek.com', balanceCacheMs: 60000, dataDir, holidays: [] })
-assert.ok(route && route.path === '/dsh-balance/api', 'api route registered')
-
-function call(method, url, body) {
+function call(route, method, url, body) {
   return new Promise((resolve, reject) => {
     const req = {
       method,
@@ -50,8 +58,11 @@ function call(method, url, body) {
   })
 }
 
-const get = (sid) => call('GET', `/dsh-balance/api/budget${sid ? `?session=${sid}` : ''}`)
-const post = (sid, body) => call('POST', `/dsh-balance/api/budget${sid ? `?session=${sid}` : ''}`, body)
+// ── 1) 预算隔离 ───────────────────────────────────────────────────────────
+const dataDir = mkdtempSync(join(tmpdir(), 'dshb-budget-'))
+const route = setup({ dataDir })
+const get = (sid) => call(route, 'GET', `/dsh-tidecost/api/budget${sid ? `?session=${sid}` : ''}`)
+const post = (sid, body) => call(route, 'POST', `/dsh-tidecost/api/budget${sid ? `?session=${sid}` : ''}`, body)
 
 const r1 = await get('session-A')
 check('默认：新会话用全局默认会话预算', () => {
@@ -76,7 +87,6 @@ const r3 = await get('session-B')
 check('会话 B 隔离：仍是默认值（不受 A 影响）', () => {
   assert.equal(r3.json.budget.sessionBudgetCny, 10)
   assert.equal(r3.json.budget.sessionBudgetCustom, false)
-  // 全局项对所有会话一致
   assert.equal(r3.json.budget.monthlyBudgetCny, 111)
 })
 
@@ -113,6 +123,40 @@ check('落盘结构：budget.json 无旧 sessionBudgetCny，隔离表独立', ()
   assert.equal(Object.prototype.hasOwnProperty.call(globalBudget, 'sessionBudgetCny'), false)
   const perSession = JSON.parse(readFileSync(join(dataDir, 'session-budgets.json'), 'utf8'))
   assert.deepEqual(perSession, {}) // A 已被恢复默认删除
+})
+
+// ── 2) 旧包名数据目录迁移（dsh-balance → dsh-tidecost）────────────────────
+check('旧数据目录迁移 + 旧全局 sessionBudgetCny 迁移为默认', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dshb-home-'))
+  const legacyDir = join(root, 'dsh-balance')
+  mkdirSync(legacyDir, { recursive: true })
+  // 旧版：会话预算写在全局；另有会话自定义表
+  writeFileSync(join(legacyDir, 'budget.json'), JSON.stringify({ sessionBudgetCny: 42, monthlyBudgetCny: 88, balanceWarnCny: 3, warnThreshold: 0.5 }))
+  writeFileSync(join(legacyDir, 'session-budgets.json'), JSON.stringify({ 'session-X': 7 }))
+
+  const migratedRoute = setup({ dshHome: root })
+  const newDir = join(root, 'dsh-tidecost')
+  assert.equal(existsSync(newDir), true, '新数据目录已生成')
+  assert.equal(existsSync(legacyDir), false, '旧数据目录已移走')
+  assert.equal(existsSync(join(newDir, 'budget.json')), true, 'budget.json 随目录迁移')
+})
+
+const migrated = await (async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dshb-home2-'))
+  const legacyDir = join(root, 'dsh-balance')
+  mkdirSync(legacyDir, { recursive: true })
+  writeFileSync(join(legacyDir, 'budget.json'), JSON.stringify({ sessionBudgetCny: 42, monthlyBudgetCny: 88, balanceWarnCny: 3, warnThreshold: 0.5 }))
+  writeFileSync(join(legacyDir, 'session-budgets.json'), JSON.stringify({ 'session-X': 7 }))
+  const r = setup({ dshHome: root })
+  return call(r, 'GET', '/dsh-tidecost/api/budget?session=session-X')
+})()
+
+check('迁移后预算语义正确：会话 X 自定义 7，默认 42，全局 88', () => {
+  assert.equal(migrated.json.budget.sessionBudgetCny, 7)
+  assert.equal(migrated.json.budget.sessionBudgetCustom, true)
+  assert.equal(migrated.json.budget.defaultSessionBudgetCny, 42)
+  assert.equal(migrated.json.budget.monthlyBudgetCny, 88)
+  assert.equal(migrated.json.budget.warnThreshold, 0.5)
 })
 
 console.log(`\nPASS ${n} 项`)

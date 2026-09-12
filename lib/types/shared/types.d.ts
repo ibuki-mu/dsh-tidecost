@@ -1,5 +1,5 @@
 /**
- * dsh-balance — host/client 共享的数据契约。
+ * dsh-tidecost — host/client 共享的数据契约。
  * 纯类型（无运行时导出），host 与 client bundle 各自独立打包。
  */
 /** 官方峰谷档位：legacy=峰谷生效前基础价，peak=峰，valley=谷。 */

@@ -8,12 +8,12 @@
 #   3) 文件 ~/.dsh/github-token（建议 umask 077 创建，仅本人可读）
 #
 # 用法：
-#   bash scripts/publish-github.sh                     # 公开仓库 dsh-balance
+#   bash scripts/publish-github.sh                     # 公开仓库 dsh-tidecost
 #   VISIBILITY=private bash scripts/publish-github.sh
 #   TAG=v0.1.0 bash scripts/publish-github.sh
 set -euo pipefail
 
-REPO_NAME="${REPO_NAME:-dsh-balance}"
+REPO_NAME="${REPO_NAME:-dsh-tidecost}"
 VISIBILITY="${VISIBILITY:-public}" # public | private
 DESCRIPTION="${DESCRIPTION:-DeepSeek Harness 侧边栏：余额 / 峰谷价 / 逐步用量花费 / 预算预警}"
 

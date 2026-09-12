@@ -1,11 +1,11 @@
 /**
- * dsh-balance — DeepSeek 官方峰谷分时定价（纯函数，host/client 共用同一份）。
+ * dsh-tidecost — DeepSeek 官方峰谷分时定价（纯函数，host/client 共用同一份）。
  *
  * 官方策略（北京时间）：
  *   - 高峰时段 = 周一至周五 09:00–12:00、14:00–18:00；其余（含周末与节假日）为空闲/谷时段。
  *   - 等价 UTC 判定：工作日 UTC 01:00–04:00、06:00–10:00 为峰；周末与节假日全天谷价。
  *   - 谷价 = 峰价 × 0.5。
- *   - 节假日：由 host Config `holidays` / $DSH_HOME/dsh-balance/holidays.json 提供北京日期
+ *   - 节假日：由 host Config `holidays` / $DSH_HOME/dsh-tidecost/holidays.json 提供北京日期
  *     （YYYY-MM-DD），本模块只接受名单，不内置法定节假日表。
  *
  * 价格纪年（人民币 ¥/百万 tokens，官方公告）：

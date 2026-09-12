@@ -1,9 +1,9 @@
 /**
- * dsh-balance 峰价·每日首次对话前确认 门控自检。
+ * dsh-tidecost 峰价·每日首次对话前确认 门控自检。
  * 运行：node test/peakgate.mjs（先构建 host 生成 lib/shared/peakgate.js）
  */
 import assert from 'node:assert/strict'
-import { beijingDateKey, peakEnabledKey, peakDoneKey, shouldArmPeakConfirm } from '../lib/shared/peakgate.js'
+import { beijingDateKey, peakDoneKey, peakDoneKeyLegacy, peakEnabledKey, peakEnabledKeyLegacy, shouldArmPeakConfirm } from '../lib/shared/peakgate.js'
 
 const iso = (s) => Date.parse(s)
 let n = 0
@@ -40,9 +40,14 @@ check('shouldArmPeakConfirm 判定矩阵', () => {
   assert.equal(shouldArmPeakConfirm({ ...base, now: monPeak, holidays: ['2026-08-18'] }), true)
 })
 
-check('存储键', () => {
-  assert.equal(peakEnabledKey(), 'dsh-balance.peakConfirm.enabled')
-  assert.equal(peakDoneKey('2026-08-17'), 'dsh-balance.peakConfirm.done.2026-08-17')
+check('存储键（新包名）', () => {
+  assert.equal(peakEnabledKey(), 'dsh-tidecost.peakConfirm.enabled')
+  assert.equal(peakDoneKey('2026-08-17'), 'dsh-tidecost.peakConfirm.done.2026-08-17')
+})
+
+check('旧包名遗留键（一次性迁移读取用）', () => {
+  assert.equal(peakEnabledKeyLegacy(), 'dsh-balance.peakConfirm.enabled')
+  assert.equal(peakDoneKeyLegacy('2026-08-17'), 'dsh-balance.peakConfirm.done.2026-08-17')
 })
 
 console.log(`\nPASS ${n} 项`)

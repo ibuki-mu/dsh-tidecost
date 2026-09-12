@@ -1,5 +1,5 @@
 /**
- * dsh-balance — 峰价·每日首次对话前确认的门控纯逻辑（host/client 无关，可单测）。
+ * dsh-tidecost — 峰价·每日首次对话前确认的门控纯逻辑（host/client 无关，可单测）。
  *
  * 判定口径（与 shared/tide.ts 一致，官方口径）：
  *  - 峰价 = 北京时间周一至周五 09:00–12:00、14:00–18:00（周末与节假日全天谷价）。
@@ -34,10 +34,18 @@ export function shouldArmPeakConfirm(input: PeakConfirmArmInput): boolean {
   return true
 }
 
-export const PEAK_ENABLED_KEY = 'dsh-balance.peakConfirm.enabled'
+export const PEAK_ENABLED_KEY = 'dsh-tidecost.peakConfirm.enabled'
 export function peakEnabledKey(): string {
   return PEAK_ENABLED_KEY
 }
 export function peakDoneKey(dateKey: string): string {
+  return `dsh-tidecost.peakConfirm.done.${dateKey}`
+}
+
+// ── 旧包名（dsh-balance）遗留键：仅供迁移读取，读到后写回新键并清理 ──────────
+export function peakEnabledKeyLegacy(): string {
+  return 'dsh-balance.peakConfirm.enabled'
+}
+export function peakDoneKeyLegacy(dateKey: string): string {
   return `dsh-balance.peakConfirm.done.${dateKey}`
 }

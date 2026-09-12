@@ -1,5 +1,5 @@
 /**
- * dsh-balance 峰谷数学自检（纯 Node，无依赖）。
+ * dsh-tidecost 峰谷数学自检（纯 Node，无依赖）。
  * 运行：node test/tide.mjs（先构建 host 生成 lib/shared/tide.js）
  */
 import assert from 'node:assert/strict'

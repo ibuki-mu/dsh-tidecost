@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 
-const PLUGIN_ID = 'dsh-balance'
+const PLUGIN_ID = 'dsh-tidecost'
 
 // client bundle 运行时只依赖 react：槽位注册走 ctx.slots 结构形态，
 // 不引用任何 @deepseek-ai/* client 包（0.1.2-rc.1 已无 dsh-client-runtime）。

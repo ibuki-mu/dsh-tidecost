@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build dsh-balance: compile src/ → lib/ with tsc, then bundle host+client with tsdown.
+# Build dsh-tidecost: compile src/ → lib/ with tsc, then bundle host+client with tsdown.
 # Requires typescript + tsdown (devDependencies) — run `npm install` first.
 #
 # Dependency-source probing (node_modules mode prefers the RUNNING dsh version):

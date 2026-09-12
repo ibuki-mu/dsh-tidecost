@@ -1,4 +1,4 @@
-/** dsh-balance 面板与触发器样式（跟随 DSH 主题变量）。 */
+/** dsh-tidecost 面板与触发器样式（跟随 DSH 主题变量）。 */
 export const styles = `
 .dshb-trigger{
   display:flex;align-items:center;gap:5px;width:100%;

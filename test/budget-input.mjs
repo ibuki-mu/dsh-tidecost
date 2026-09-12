@@ -1,5 +1,5 @@
 /**
- * dsh-balance 预算输入框转换自检（清空前导零/空串处理回归）。
+ * dsh-tidecost 预算输入框转换自检（清空前导零/空串处理回归）。
  * 运行：node test/budget-input.mjs（先构建 host 生成 lib/shared/budget-input.js）
  */
 import assert from 'node:assert/strict'

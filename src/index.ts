@@ -1,12 +1,12 @@
 /**
- * dsh-balance — 侧边栏余额 / 会话逐步 token 用量与花费 / 预算预警（host 侧）。
+ * dsh-tidecost — 侧边栏余额 / 会话逐步 token 用量与花费 / 预算预警（host 侧）。
  *
  * 数据源：
  *  - 余额：ctx.credentials 解析 DEEPSEEK_API_KEY → GET /user/balance
  *  - 逐步用量：ctx.sessions 的 live Session.events（assistant/message.usage +
  *    request/context.model），当前会话必为 live，无需读磁盘 JSONL
  *  - 月度累计：监听 session/event 把带 usage 的 assistant/message 追加到
- *    $DSH_HOME/dsh-balance/usage-log.jsonl（仅用于月度预算预警）
+ *    $DSH_HOME/dsh-tidecost/usage-log.jsonl（仅用于月度预算预警）
  *
  * 规范：所有资源注册挂 ctx.effect（热重载/卸载自动清理）；budget.json 原子写。
  */
@@ -42,13 +42,13 @@ type AppContext = Context & {
   tools: ToolRegistry
 }
 
-export const name = 'dsh-balance'
+export const name = 'dsh-tidecost'
 export const inject = ['credentials', 'sessions', 'webServer', 'tools']
 
 export interface Config {
   apiBaseUrl: string
   balanceCacheMs: number
-  /** 数据目录（缺省 $DSH_HOME/dsh-balance）。 */
+  /** 数据目录（缺省 $DSH_HOME/dsh-tidecost）。 */
   dataDir: string
   /** 节假日北京日期名单（YYYY-MM-DD）；节假日全天谷价。可被 dataDir/holidays.json 覆盖。 */
   holidays: string[]
@@ -129,7 +129,25 @@ function num(v: string | number | undefined): number {
 export function apply(ctx: AppContext, config: Config): void {
   const logger = ctx.logger
   const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
-  const dataDir = config.dataDir || join(dshHome, 'dsh-balance')
+
+  // ── 数据目录（含旧包名 dsh-balance → dsh-tidecost 的一次性迁移）──────────
+  // 仅在未显式配置 dataDir 时迁移；迁移失败则沿用旧目录继续读，避免丢数据。
+  let dataDir = config.dataDir || join(dshHome, 'dsh-tidecost')
+  if (!config.dataDir) {
+    const legacyDir = join(dshHome, 'dsh-balance')
+    try {
+      if (!existsSync(dataDir) && existsSync(legacyDir)) {
+        try {
+          renameSync(legacyDir, dataDir)
+          logger?.info?.('[dsh-tidecost] 已迁移旧数据目录 %s → %s', legacyDir, dataDir)
+        } catch {
+          dataDir = legacyDir // 迁移失败：沿用旧目录，保证预算/节假日等数据仍可用
+          logger?.warn?.('[dsh-tidecost] 旧数据目录迁移失败，继续使用 %s', legacyDir)
+        }
+      }
+    } catch { /* 探测失败按新目录处理 */ }
+  }
+
   const budgetFile = join(dataDir, 'budget.json')
   const sessionBudgetFile = join(dataDir, 'session-budgets.json')
   const logFile = join(dataDir, 'usage-log.jsonl')
@@ -279,7 +297,7 @@ export function apply(ctx: AppContext, config: Config): void {
       usage: event.data.usage,
       tier: tierAt(event.time, loadHolidays()),
     })
-  }), 'dsh-balance: usage log')
+  }), 'dsh-tidecost: usage log')
 
   // ── 余额 ───────────────────────────────────────────────────────────────
   let balanceCache: { at: number; data: BalanceData } | null = null
@@ -439,7 +457,7 @@ export function apply(ctx: AppContext, config: Config): void {
     const method = req.method ?? 'GET'
 
     try {
-      if (path === '/dsh-balance/api/overview' && method === 'GET') {
+      if (path === '/dsh-tidecost/api/overview' && method === 'GET') {
         const sessionId = url.searchParams.get('session') || ''
         const holidays = loadHolidays()
         const [balanceRes, session, budget] = await Promise.all([
@@ -467,14 +485,14 @@ export function apply(ctx: AppContext, config: Config): void {
         return
       }
 
-      if (path === '/dsh-balance/api/balance' && method === 'GET') {
+      if (path === '/dsh-tidecost/api/balance' && method === 'GET') {
         const force = url.searchParams.get('refresh') === '1'
         const result = await fetchBalance(force)
         sendJson(res, result.ok ? 200 : 200, result)
         return
       }
 
-      if (path === '/dsh-balance/api/budget') {
+      if (path === '/dsh-tidecost/api/budget') {
         const sidParam = url.searchParams.get('session') || undefined
         if (method === 'GET') {
           const holidays = loadHolidays()
@@ -513,7 +531,7 @@ export function apply(ctx: AppContext, config: Config): void {
         return
       }
 
-      const usageMatch = /^\/dsh-balance\/api\/session\/([^/]+)\/usage$/.exec(path)
+      const usageMatch = /^\/dsh-tidecost\/api\/session\/([^/]+)\/usage$/.exec(path)
       if (usageMatch && method === 'GET') {
         const sessionId = decodeURIComponent(usageMatch[1])
         const usage = computeSessionUsage(sessionId, loadHolidays())
@@ -529,9 +547,9 @@ export function apply(ctx: AppContext, config: Config): void {
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
-    path: '/dsh-balance/api',
+    path: '/dsh-tidecost/api',
     handler: handleApi,
-  }), 'dsh-balance: api')
+  }), 'dsh-tidecost: api')
 
   // ── 工具（可选，给 agent 一个快速查询入口）────────────────────────────
   ctx.effect(() => ctx.tools.register(defineTool({
@@ -573,7 +591,7 @@ export function apply(ctx: AppContext, config: Config): void {
         alerts,
       }, null, 2)
     },
-  })), 'dsh-balance: tool')
+  })), 'dsh-tidecost: tool')
 
-  logger?.info?.('[dsh-balance] 已启动（dataDir=%s）', dataDir)
+  logger?.info?.('[dsh-tidecost] 已启动（dataDir=%s）', dataDir)
 }

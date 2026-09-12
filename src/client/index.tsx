@@ -1,5 +1,5 @@
 /**
- * dsh-balance — 侧边栏余额 / 峰谷价 / 用量 / 预算模块（client 侧）。
+ * dsh-tidecost — 侧边栏余额 / 峰谷价 / 用量 / 预算模块（client 侧）。
  *
  * 注册进 `sidebar.footer.action`（list/root）：宽侧边栏显示余额行，
  * rail 模式显示图标；点击弹出悬浮面板（position:fixed，不动摇其它槽位）。
@@ -17,13 +17,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BudgetConfig, Overview, StepUsage } from '../shared/types'
 import { beijingScheduleSegments, currentBeijingSegmentIndex, phaseAt } from '../shared/tide'
-import { beijingDateKey, peakDoneKey, peakEnabledKey, shouldArmPeakConfirm } from '../shared/peakgate'
+import { beijingDateKey, peakDoneKey, peakDoneKeyLegacy, peakEnabledKey, peakEnabledKeyLegacy, shouldArmPeakConfirm } from '../shared/peakgate'
 import { budgetToDraft, draftToBudget, sanitizeNumText, toNum, type BudgetDraft } from '../shared/budget-input'
 import { styles } from './styles'
 
 export const inject = ['slots']
 
-const API = '/dsh-balance/api'
+const API = '/dsh-tidecost/api'
 const POLL_OPEN_MS = 15_000
 const POLL_CLOSED_MS = 60_000
 const NOTICE_TTL_MS = 45_000
@@ -40,16 +40,34 @@ function readLocal(key: string, fallback: string | null): string | null {
     return fallback
   }
 }
-function readBoolLocal(key: string, def: boolean): boolean {
-  const v = readLocal(key, null)
-  if (v == null) return def
-  return v === '1'
-}
 function writeLocal(key: string, value: string): void {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return
     window.localStorage.setItem(key, value)
   } catch { /* 隐私模式等：忽略 */ }
+}
+function removeLocal(key: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+    window.localStorage.removeItem(key)
+  } catch { /* 忽略 */ }
+}
+
+// 峰价确认状态：读新键 → 回退旧包名键（一次性迁移），写新键并清理旧键
+function readPeakEnabled(defaultOn = true): boolean {
+  const v = readLocal(peakEnabledKey(), null) ?? readLocal(peakEnabledKeyLegacy(), null)
+  return v == null ? defaultOn : v === '1'
+}
+function readPeakDone(dateKey: string): string | null {
+  return readLocal(peakDoneKey(dateKey), null) ?? readLocal(peakDoneKeyLegacy(dateKey), null)
+}
+function writePeakEnabled(on: boolean): void {
+  writeLocal(peakEnabledKey(), on ? '1' : '0')
+  removeLocal(peakEnabledKeyLegacy())
+}
+function writePeakDone(dateKey: string): void {
+  writeLocal(peakDoneKey(dateKey), '1')
+  removeLocal(peakDoneKeyLegacy(dateKey))
 }
 
 // ── 运行时结构类型（避免依赖具体 @deepseek-ai/* client 类型包）──────────────
@@ -139,11 +157,11 @@ export function apply(ctx: ApplyCtx): void {
   ctx.effect(() => ctx.slots.inject('sidebar.footer.action', () =>
     ctx.slots.register({
       name: 'sidebar.footer.action',
-      id: 'dsh-balance-trigger',
+      id: 'dsh-tidecost-trigger',
       order: 90,
       label: () => '余额',
     }, BalanceTrigger),
-  ), 'dsh-balance: sidebar trigger')
+  ), 'dsh-tidecost: sidebar trigger')
 }
 
 function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
@@ -157,8 +175,8 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
   const [saving, setSaving] = useState(false)
   const [tideNotice, setTideNotice] = useState<string | null>(null)
   // ── 峰价·每日首次对话前确认 ──
-  const [peakEnabled, setPeakEnabled] = useState<boolean>(() => readBoolLocal(peakEnabledKey(), true))
-  const [confirmedDate, setConfirmedDate] = useState<string | null>(() => readLocal(peakDoneKey(beijingDateKey(Date.now())), null))
+  const [peakEnabled, setPeakEnabled] = useState<boolean>(() => readPeakEnabled(true))
+  const [confirmedDate, setConfirmedDate] = useState<string | null>(() => readPeakDone(beijingDateKey(Date.now())))
   const [peakConfirmOpen, setPeakConfirmOpen] = useState(false)
   const shownTodayRef = useRef(false)
   const holidaysRef = useRef<string[]>([])
@@ -209,11 +227,11 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
   // 峰价·每日首次对话前确认：关闭即视为当日已确认
   const dismissPeakConfirm = (disableToo = false) => {
     const today = beijingDateKey(Date.now())
-    writeLocal(peakDoneKey(today), '1')
+    writePeakDone(today)
     setConfirmedDate(today)
     setPeakConfirmOpen(false)
     if (disableToo) {
-      writeLocal(peakEnabledKey(), '0')
+      writePeakEnabled(false)
       setPeakEnabled(false)
     }
   }
@@ -223,7 +241,7 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
     const check = () => {
       setNow(Date.now())
       const today = beijingDateKey(Date.now())
-      const done = readLocal(peakDoneKey(today), null)
+      const done = readPeakDone(today)
       if (done !== confirmedDate && done !== null) setConfirmedDate(done)
       if (shownTodayRef.current || peakConfirmOpen) return
       if (shouldArmPeakConfirm({ now: Date.now(), enabled: peakEnabled, confirmedDate: done, hasSession: !!current, holidays: holidaysRef.current })) {
@@ -401,7 +419,7 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
                 <span className="dshb-muted">{confirmedDate === beijingDateKey(now) ? '今日已确认' : '今日待确认'}</span>
                 <label className="dshb-switch" title="启用/停用「峰价每日首次对话前确认」">
                   <input type="checkbox" checked={peakEnabled}
-                    onChange={(e) => { const v = e.target.checked; writeLocal(peakEnabledKey(), v ? '1' : '0'); setPeakEnabled(v) }} />
+                    onChange={(e) => { const v = e.target.checked; writePeakEnabled(v); setPeakEnabled(v) }} />
                   启用
                 </label>
                 <button className="dshb-btn ghost" onClick={() => setPeakConfirmOpen(true)}>预览弹窗</button>

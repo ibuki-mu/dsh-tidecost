@@ -1,7 +1,7 @@
 {
-  "name": "dsh-balance",
+  "name": "dsh-tidecost",
   "version": "0.1.0",
-  "description": "侧边栏余额 / 会话逐步 token 用量与花费 / 预算预警模块",
+  "description": "DSH 侧边栏：余额 / 峰谷价提醒 / 逐步 token 花费 / 会话预算预警",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",

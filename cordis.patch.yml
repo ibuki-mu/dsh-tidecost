@@ -1,6 +1,6 @@
-# dsh-balance bundle 层：插入余额插件行（host + client 双面）。
-# 与 dsh-web-app 的 - insert 同级；id 为本插件导出名 dsh-balance。
+# dsh-tidecost bundle 层：插入余额插件行（host + client 双面）。
+# 与 dsh-web-app 的 - insert 同级；id 为本插件导出名 dsh-tidecost。
 - insert:
-    - id: dsh-balance
-      name: dsh-balance
+    - id: dsh-tidecost
+      name: dsh-tidecost
       config: {}
