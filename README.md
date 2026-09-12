@@ -39,7 +39,7 @@
 
 ```sh
 # 1) 官方装配（GitHub）
-dsh plugin --profile web add github:<owner>/dsh-tidecost
+dsh plugin --profile web add github:ibuki-mu/dsh-tidecost
 
 # 或本地开发目录
 dsh plugin --profile web add link:/path/to/dsh-tidecost
