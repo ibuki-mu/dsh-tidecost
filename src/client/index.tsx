@@ -123,6 +123,7 @@ function fmtCountdown(seconds: number | null | undefined): string {
 }
 
 function tierLabel(tier: string | undefined, weekend = false, holiday = false): { text: string; cls: string } {
+  if (tier === 'flat') return { text: '按量', cls: 'flat' }
   if (weekend) return { text: '周末·谷价', cls: 'valley' }
   if (holiday) return { text: '节假日·谷价', cls: 'valley' }
   if (tier === 'peak') return { text: '峰价', cls: 'peak' }
@@ -461,6 +462,7 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
                     <span><span className="k">总 token</span> {session.totalTokens.toLocaleString()}</span>
                     <span><span className="k">总花费</span> ¥{fmt(session.totalCostCny)}</span>
                     <span><span className="k">模型</span> {session.lastModel ?? '—'}</span>
+                    <span><span className="k">provider</span> {session.lastProvider ?? '—'}</span>
                     <span><span className="k">缓存命中</span> {session.cacheHitRate != null ? (session.cacheHitRate * 100).toFixed(1) + '%' : '—'}</span>
                     <span><span className="k">会话</span> {session.sessionId}</span>
                   </div>
@@ -545,8 +547,8 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
               </div>
             )}
             <div className="dshb-hint" style={{ marginTop: 2 }}>
-              ⚠️ 仅支持 DeepSeek API（deepseek-official）：余额取 DeepSeek 账户，
-              峰谷价与单价均为官方口径；其他 provider 的费用为 Flash 兜底估算，仅供参考。
+              支持 <b>DeepSeek</b>（余额 / 峰谷价，官方人民币口径）与 <b>Z.ai</b>（按量计费，
+              USD 按固定汇率折合 ¥）。其他 provider 无定价表，费用为 Flash 兜底估算，仅供参考。
             </div>
           </div>
         </div>

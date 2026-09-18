@@ -4,7 +4,7 @@
  */
 
 /** 官方峰谷档位：legacy=峰谷生效前基础价，peak=峰，valley=谷。 */
-export type TideTier = 'legacy' | 'peak' | 'valley'
+export type TideTier = 'legacy' | 'peak' | 'valley' | 'flat'
 
 /** 归一化后的 DeepSeek 账户余额。 */
 export interface BalanceData {
@@ -28,14 +28,16 @@ export interface StepUsage {
   step: number
   time: number
   model?: string
-  /** 该步发生时刻所属峰谷档位。 */
+  /** 该步的路由 provider（如 deepseek-official / zai）。 */
+  provider?: string
+  /** 该步计价档位：DeepSeek 峰谷档位，或按量计费 provider 的 `flat`。 */
   tier?: TideTier
   inputTokens: number
   outputTokens: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   reasoningTokens?: number
-  /** 按官方峰谷人民币价 × 调用时刻计算的费用。 */
+  /** 该步费用（人民币口径；美元计费 provider 按固定汇率折合）。 */
   costCny: number
   /** adapter 是否上报了 usage（无则 tokens 为 0、成本 0）。 */
   hasUsage: boolean
@@ -61,6 +63,8 @@ export interface SessionUsage {
   startAt: number | null
   lastAt: number | null
   lastModel?: string
+  /** 最近一步的路由 provider。 */
+  lastProvider?: string
 }
 
 /**

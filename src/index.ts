@@ -33,7 +33,7 @@ import type {
   StatusLevel,
   TideStatus,
 } from './shared/types.js'
-import { costCny as tideCostCny, isPeakAt, phaseAt, tierAt } from './shared/tide.js'
+import { costCny as tideCostCny, isPeakAt, phaseAt, stepTier, tierAt, USD_CNY_DEFAULT } from './shared/tide.js'
 
 type AppContext = Context & {
   credentials: CredentialProvider
@@ -52,6 +52,8 @@ export interface Config {
   dataDir: string
   /** 节假日北京日期名单（YYYY-MM-DD）；节假日全天谷价。可被 dataDir/holidays.json 覆盖。 */
   holidays: string[]
+  /** USD→CNY 汇率：把 Z.ai 等美元按量计费 provider 折合进 ¥ 预算/预警（缺省 7.1）。 */
+  usdCny: number
 }
 
 export const Config = z.object({
@@ -59,6 +61,7 @@ export const Config = z.object({
   balanceCacheMs: z.number().min(1000).default(60000),
   dataDir: z.string().default(''),
   holidays: z.array(z.string()).default([]),
+  usdCny: z.number().min(0.1).default(USD_CNY_DEFAULT),
 }) as unknown as Config
 
 /** 经典 DeepSeek 官方单价（¥/百万 token）已废弃——改由 src/shared/tide.ts 的官方峰谷价计。 */
@@ -97,8 +100,10 @@ interface UsageLogRecord {
   time: number
   sessionId: string
   model?: string
+  /** 路由 provider（旧记录可能缺失，缺省按模型名推断）。 */
+  provider?: string
   usage: TokenUsage
-  tier?: ReturnType<typeof tierAt>
+  tier?: ReturnType<typeof stepTier>
 }
 
 function readJson<T>(file: string, fallback: T): T {
@@ -156,6 +161,7 @@ export function apply(ctx: AppContext, config: Config): void {
 
   const apiBaseUrl = config.apiBaseUrl || 'https://api.deepseek.com'
   const balanceCacheMs = config.balanceCacheMs ?? 60000
+  const usdCny = Number.isFinite(config.usdCny) && config.usdCny > 0 ? config.usdCny : USD_CNY_DEFAULT
 
   // ── 节假日名单（热更：dataDir/holidays.json 优先于 Config.holidays）─────────
   function loadHolidays(): string[] {
@@ -167,9 +173,15 @@ export function apply(ctx: AppContext, config: Config): void {
     return Array.isArray(config.holidays) ? config.holidays : []
   }
 
-  // ── 峰谷计价与成本（官方人民币峰谷价，见 shared/tide.ts）──────────────────
-  function costOf(usage: TokenUsage, model: string | undefined, atMs: number, holidays: readonly string[]): number {
-    return tideCostCny(usage, model, atMs, holidays)
+  // ── 计价与成本（DeepSeek 峰谷价格纪年 + Z.ai 等按量计费，见 shared/tide.ts）──
+  function costOf(
+    usage: TokenUsage,
+    model: string | undefined,
+    atMs: number,
+    holidays: readonly string[],
+    provider?: string,
+  ): number {
+    return tideCostCny(usage, model, atMs, holidays, provider, usdCny)
   }
 
   function tideStatus(holidays: readonly string[]): TideStatus {
@@ -276,7 +288,7 @@ export function apply(ctx: AppContext, config: Config): void {
           const rec = JSON.parse(line) as UsageLogRecord
           if (typeof rec.time === 'number' && rec.time >= monthStart && rec.usage) {
             // 历史行可能由旧单价写入；月结一律按“调用发生时刻”的官方价格纪年重算。
-            total += costOf(rec.usage, rec.model, rec.time, holidays)
+            total += costOf(rec.usage, rec.model, rec.time, holidays, rec.provider)
           }
         } catch { /* 跳过损坏行 */ }
       }
@@ -289,13 +301,16 @@ export function apply(ctx: AppContext, config: Config): void {
   // 实时追加：会话每产生一条带 usage 的 assistant/message 就落一行（月结时按新口径重算）
   ctx.effect(() => ctx.on('session/event', (session: Session, event: SessionEvent) => {
     if (event.type !== 'assistant/message' || !event.data.usage) return
-    const model = session.requestContext()?.model
+    const route = session.requestContext()
+    const model = route?.model
+    const provider = route?.provider
     appendUsageLog({
       time: event.time,
       sessionId: session.id,
       model,
+      provider,
       usage: event.data.usage,
-      tier: tierAt(event.time, loadHolidays()),
+      tier: stepTier(provider, model, event.time, loadHolidays()),
     })
   }), 'dsh-tidecost: usage log')
 
@@ -351,10 +366,12 @@ export function apply(ctx: AppContext, config: Config): void {
     if (!session) return null
     const events = session.snapshotEvents()
     let currentModel: string | undefined
+    let currentProvider: string | undefined
     const steps: StepUsage[] = []
     for (const ev of events) {
       if (ev.type === 'request/context') {
         currentModel = ev.data.model
+        currentProvider = ev.data.provider
       } else if (ev.type === 'assistant/message') {
         const u = ev.data.usage
         const hasUsage = !!u
@@ -364,13 +381,14 @@ export function apply(ctx: AppContext, config: Config): void {
           step: ev.data.step,
           time: ev.time,
           model: currentModel,
-          tier: tierAt(ev.time, holidays),
+          provider: currentProvider,
+          tier: stepTier(currentProvider, currentModel, ev.time, holidays),
           inputTokens: u?.inputTokens ?? 0,
           outputTokens: u?.outputTokens ?? 0,
           cacheReadTokens: u?.cacheReadTokens,
           cacheWriteTokens: u?.cacheWriteTokens,
           reasoningTokens: u?.reasoningTokens,
-          costCny: hasUsage ? costOf(u!, currentModel, ev.time, holidays) : 0,
+          costCny: hasUsage ? costOf(u!, currentModel, ev.time, holidays, currentProvider) : 0,
           hasUsage,
         })
       }
@@ -403,6 +421,7 @@ export function apply(ctx: AppContext, config: Config): void {
       startAt: first?.time ?? null,
       lastAt: last?.time ?? null,
       lastModel: lastUsed?.model ?? currentModel,
+      lastProvider: lastUsed?.provider ?? currentProvider,
     }
   }
 
@@ -585,6 +604,7 @@ export function apply(ctx: AppContext, config: Config): void {
           totalTokens: usage.totalTokens,
           totalCostCny: usage.totalCostCny,
           lastModel: usage.lastModel,
+          lastProvider: usage.lastProvider,
         } : null,
         monthCostCny: monthCost,
         budget,

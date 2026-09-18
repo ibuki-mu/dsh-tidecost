@@ -50,7 +50,8 @@ export interface ModelPriceEntry {
   epochs: PriceEpoch[]
 }
 
-export type TideTier = 'legacy' | 'peak' | 'valley'
+/** 档位：DeepSeek = legacy/peak/valley；其他 provider 按量计费 = flat。 */
+export type TideTier = 'legacy' | 'peak' | 'valley' | 'flat'
 
 // ── 价格纪年常量（官方公告口径）───────────────────────────────────────────
 const FLASH_LEGACY: TierPrices = { cacheHit: 0.019, cacheMiss: 0.95, output: 1.91 }
@@ -112,6 +113,81 @@ export function priceEntryFor(model: string | undefined): ModelPriceEntry {
     if (id.includes('flash')) return FLASH_ENTRY
   }
   return DEFAULT_PRICE_ENTRY
+}
+
+// ── 其他 provider：按量计费（无峰谷，美元计价）────────────────────────────
+/** USD→CNY 折算默认汇率（用于把美元计费 provider 折合进 ¥ 预算/预警；Config.usdCny 可覆盖）。 */
+export const USD_CNY_DEFAULT = 7.1
+
+export type PriceCurrency = 'CNY' | 'USD'
+
+/** 按量计费单价（每百万 token，原币）。 */
+export interface FlatPrices {
+  input: number
+  cacheRead: number
+  cacheWrite: number
+  output: number
+  currency: PriceCurrency
+}
+
+/**
+ * 非 DeepSeek provider 的按量计费表（provider → model → 单价，`*` 为该 provider 兜底）。
+ *
+ * 来源：Z.ai 官方定价页（docs.z.ai/guides/overview/pricing，USD / 1M tokens，按量计费）：
+ *   GLM-5.3-Flash：输入 $0.15 / 缓存命中 $0.03 / 输出 $0.50（缓存写入限时免费 → 0）
+ * 注：pi-ai 内置目录（coding 端点）标的同模型价恰为按量价的一半；若你走 coding 套餐
+ * 折扣价，可用 Config.prices 覆盖（见 README）。
+ */
+export const FLAT_PRICES: Record<string, Record<string, FlatPrices>> = {
+  zai: {
+    'glm-5.3-flash': { input: 0.15, cacheRead: 0.03, cacheWrite: 0, output: 0.5, currency: 'USD' },
+    '*': { input: 0.15, cacheRead: 0.03, cacheWrite: 0, output: 0.5, currency: 'USD' },
+  },
+}
+
+function normalizeProvider(provider: string | undefined): string {
+  return String(provider ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** provider 归一化：显式给出优先；缺省时按模型名推断。 */
+export function inferProvider(provider: string | undefined, model: string | undefined): string {
+  const p = normalizeProvider(provider)
+  if (p) {
+    if (p.includes('deepseek')) return 'deepseek'
+    if (p.includes('zai') || p.includes('zhipu') || p.includes('bigmodel')) return 'zai'
+    return p
+  }
+  const m = normalizeModel(model)
+  if (m.includes('deepseek')) return 'deepseek'
+  if (m.includes('glm')) return 'zai'
+  return ''
+}
+
+/**
+ * 该 provider+model 是否走按量计费表。
+ * @returns 单价条目；null 表示走 DeepSeek 峰谷价格纪年（含未知 provider 的兜底）。
+ */
+export function flatPricesFor(provider: string | undefined, model: string | undefined): FlatPrices | null {
+  const p = inferProvider(provider, model)
+  if (!p || p === 'deepseek') return null
+  const table = FLAT_PRICES[p]
+  if (!table) return null
+  const m = normalizeModel(model)
+  for (const [key, entry] of Object.entries(table)) {
+    if (key !== '*' && (m === normalizeModel(key) || m.includes(normalizeModel(key)))) return entry
+  }
+  return table['*'] ?? null
+}
+
+/** 一步的档位标签：按量计费 provider → flat；否则走 DeepSeek 峰谷档位。 */
+export function stepTier(
+  provider: string | undefined,
+  model: string | undefined,
+  atMs: number,
+  holidays: readonly string[] = [],
+): TideTier {
+  if (flatPricesFor(provider, model)) return 'flat'
+  return tierAt(atMs, holidays)
 }
 
 /** 以 UTC+8 求该时刻的北京自然日 `YYYY-MM-DD`。 */
@@ -228,11 +304,19 @@ export function priceCny(model: string | undefined, atMs: number, holidays: read
 }
 
 /**
- * 一次调用的官方人民币成本。
+ * 一次调用的成本（人民币口径）。
+ *
+ * - DeepSeek（provider=deepseek / 缺省且模型名含 deepseek）：按官方峰谷价格纪年，返回 ¥。
+ * - 其他已登记 provider（如 zai）：按按量计费表（原币）计价，USD 按 `usdCny` 折合 ¥，
+ *   使预算/预警可用同一口径。
+ * - 未知 provider/model：回落 DeepSeek Flash 兜底价（仅参照）。
+ *
  * @param tokens - { inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens? }
- *   注意：harness 的 outputTokens = DeepSeek completion_tokens，已含推理 token，
- *   因此 reasoningTokens 不单独计费（与官方仅列 输入命中/未命中/输出 一致）。
- * @param holidays - 节假日北京日期名单（决定节假日走谷价）。
+ *   注意：harness 的 outputTokens = 供应商 completion_tokens，已含推理 token，
+ *   因此 reasoningTokens 不单独计费。
+ * @param holidays - 节假日北京日期名单（决定 DeepSeek 节假日走谷价）。
+ * @param provider - 路由 provider（request/context.provider），如 deepseek-official / zai。
+ * @param usdCny - USD→CNY 折算汇率（仅美元计价 provider 使用）。
  */
 export function costCny(
   tokens: {
@@ -244,12 +328,22 @@ export function costCny(
   model: string | undefined,
   atMs: number,
   holidays: readonly string[] = [],
+  provider?: string,
+  usdCny: number = USD_CNY_DEFAULT,
 ): number {
-  const p = priceCny(model, atMs, holidays)
   const input = Math.max(0, Number(tokens.inputTokens) || 0)
   const output = Math.max(0, Number(tokens.outputTokens) || 0)
   const cacheRead = Math.max(0, Number(tokens.cacheReadTokens) || 0)
   const cacheWrite = Math.max(0, Number(tokens.cacheWriteTokens) || 0)
+
+  const flat = flatPricesFor(provider, model)
+  if (flat) {
+    const amount = (input * flat.input + output * flat.output
+      + cacheRead * flat.cacheRead + cacheWrite * flat.cacheWrite) / 1_000_000
+    return flat.currency === 'USD' ? amount * (Number.isFinite(usdCny) && usdCny > 0 ? usdCny : USD_CNY_DEFAULT) : amount
+  }
+
+  const p = priceCny(model, atMs, holidays)
   return (input * p.cacheMiss + output * p.output + (cacheRead + cacheWrite) * p.cacheHit) / 1_000_000
 }
 

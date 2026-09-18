@@ -43,10 +43,40 @@ export interface ModelPriceEntry {
     /** 按时间升序的价格纪年（首尾用 ±Infinity 兜底）。 */
     epochs: PriceEpoch[];
 }
-export type TideTier = 'legacy' | 'peak' | 'valley';
+/** 档位：DeepSeek = legacy/peak/valley；其他 provider 按量计费 = flat。 */
+export type TideTier = 'legacy' | 'peak' | 'valley' | 'flat';
 export declare const PRICE_TABLE_CNY: Record<string, ModelPriceEntry>;
 /** 模型名归一化匹配（精确 → 互相包含 → flash/pro 关键字），未命中返回 Flash 兜底。 */
 export declare function priceEntryFor(model: string | undefined): ModelPriceEntry;
+/** USD→CNY 折算默认汇率（用于把美元计费 provider 折合进 ¥ 预算/预警；Config.usdCny 可覆盖）。 */
+export declare const USD_CNY_DEFAULT = 7.1;
+export type PriceCurrency = 'CNY' | 'USD';
+/** 按量计费单价（每百万 token，原币）。 */
+export interface FlatPrices {
+    input: number;
+    cacheRead: number;
+    cacheWrite: number;
+    output: number;
+    currency: PriceCurrency;
+}
+/**
+ * 非 DeepSeek provider 的按量计费表（provider → model → 单价，`*` 为该 provider 兜底）。
+ *
+ * 来源：Z.ai 官方定价页（docs.z.ai/guides/overview/pricing，USD / 1M tokens，按量计费）：
+ *   GLM-5.3-Flash：输入 $0.15 / 缓存命中 $0.03 / 输出 $0.50（缓存写入限时免费 → 0）
+ * 注：pi-ai 内置目录（coding 端点）标的同模型价恰为按量价的一半；若你走 coding 套餐
+ * 折扣价，可用 Config.prices 覆盖（见 README）。
+ */
+export declare const FLAT_PRICES: Record<string, Record<string, FlatPrices>>;
+/** provider 归一化：显式给出优先；缺省时按模型名推断。 */
+export declare function inferProvider(provider: string | undefined, model: string | undefined): string;
+/**
+ * 该 provider+model 是否走按量计费表。
+ * @returns 单价条目；null 表示走 DeepSeek 峰谷价格纪年（含未知 provider 的兜底）。
+ */
+export declare function flatPricesFor(provider: string | undefined, model: string | undefined): FlatPrices | null;
+/** 一步的档位标签：按量计费 provider → flat；否则走 DeepSeek 峰谷档位。 */
+export declare function stepTier(provider: string | undefined, model: string | undefined, atMs: number, holidays?: readonly string[]): TideTier;
 /** 以 UTC+8 求该时刻的北京自然日 `YYYY-MM-DD`。 */
 export declare function beijingDateKey(atMs: number): string;
 /** 是否为周末（UTC 自然日周六/周日）。 */
@@ -79,18 +109,26 @@ export declare function phaseAt(atMs: number, holidays?: readonly string[]): Tid
 /** 某一时刻适用的档位价格（按价格纪年 + 当时档位）。 */
 export declare function priceCny(model: string | undefined, atMs: number, holidays?: readonly string[]): TierPrices;
 /**
- * 一次调用的官方人民币成本。
+ * 一次调用的成本（人民币口径）。
+ *
+ * - DeepSeek（provider=deepseek / 缺省且模型名含 deepseek）：按官方峰谷价格纪年，返回 ¥。
+ * - 其他已登记 provider（如 zai）：按按量计费表（原币）计价，USD 按 `usdCny` 折合 ¥，
+ *   使预算/预警可用同一口径。
+ * - 未知 provider/model：回落 DeepSeek Flash 兜底价（仅参照）。
+ *
  * @param tokens - { inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens? }
- *   注意：harness 的 outputTokens = DeepSeek completion_tokens，已含推理 token，
- *   因此 reasoningTokens 不单独计费（与官方仅列 输入命中/未命中/输出 一致）。
- * @param holidays - 节假日北京日期名单（决定节假日走谷价）。
+ *   注意：harness 的 outputTokens = 供应商 completion_tokens，已含推理 token，
+ *   因此 reasoningTokens 不单独计费。
+ * @param holidays - 节假日北京日期名单（决定 DeepSeek 节假日走谷价）。
+ * @param provider - 路由 provider（request/context.provider），如 deepseek-official / zai。
+ * @param usdCny - USD→CNY 折算汇率（仅美元计价 provider 使用）。
  */
 export declare function costCny(tokens: {
     inputTokens: number;
     outputTokens: number;
     cacheReadTokens?: number;
     cacheWriteTokens?: number;
-}, model: string | undefined, atMs: number, holidays?: readonly string[]): number;
+}, model: string | undefined, atMs: number, holidays?: readonly string[], provider?: string, usdCny?: number): number;
 export interface BeijingScheduleSegment {
     /** 展示用起止（北京时间，含“次日”表述）。 */
     start: string;

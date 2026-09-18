@@ -12,13 +12,13 @@ import * as plugin from '../lib/index.js'
 let n = 0
 function check(name, fn) { fn(); n += 1; console.log('✓', name) }
 
-/** 伪 cordis 环境：捕获 webServer 路由；可选注入 DSH_HOME 以测试数据目录迁移。 */
-function setup({ dataDir = '', dshHome = null } = {}) {
+/** 伪 cordis 环境：捕获 webServer 路由；可注入 DSH_HOME 与假 sessions。 */
+function setup({ dataDir = '', dshHome = null, sessionsGet = () => undefined, sessionsList = () => [] } = {}) {
   let route = null
   const ctx = {
     logger: { info() {}, warn() {}, error() {} },
     credentials: { resolve: async () => undefined }, // 未配置 key：不联网
-    sessions: { get: () => undefined, list: () => [] },
+    sessions: { get: sessionsGet, list: sessionsList },
     webServer: { register: (r) => { route = r; return () => {} } },
     tools: { register: () => () => {} },
     effect: (fn) => fn(),
@@ -26,7 +26,7 @@ function setup({ dataDir = '', dshHome = null } = {}) {
   }
   const prevHome = process.env.DSH_HOME
   if (dshHome) process.env.DSH_HOME = dshHome
-  plugin.apply(ctx, { apiBaseUrl: 'https://api.deepseek.com', balanceCacheMs: 60000, dataDir, holidays: [] })
+  plugin.apply(ctx, { apiBaseUrl: 'https://api.deepseek.com', balanceCacheMs: 60000, dataDir, holidays: [], usdCny: 7.1 })
   if (dshHome) {
     if (prevHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = prevHome
@@ -157,6 +157,46 @@ check('迁移后预算语义正确：会话 X 自定义 7，默认 42，全局 8
   assert.equal(migrated.json.budget.defaultSessionBudgetCny, 42)
   assert.equal(migrated.json.budget.monthlyBudgetCny, 88)
   assert.equal(migrated.json.budget.warnThreshold, 0.5)
+})
+
+
+// ── 3) provider 感知计价：Z.ai 按量计费（flat）─────────────────────────────
+const T = Date.parse('2026-09-14T01:30:00Z') // 周一北京 09:30（DeepSeek 峰价时段）
+const zaiSession = {
+  id: 'session-zai',
+  requestContext: () => ({ provider: 'zai', model: 'glm-5.3-flash' }),
+  snapshotEvents: () => [
+    { type: 'request/context', seq: 0, time: T, data: { provider: 'zai', model: 'glm-5.3-flash' } },
+    { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, message: {}, usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 2000, cacheWriteTokens: 0 } } },
+  ],
+}
+const zaiRoute = setup({ dataDir: mkdtempSync(join(tmpdir(), 'dshb-zai-')), sessionsGet: (id) => (id === 'session-zai' ? zaiSession : undefined) })
+const zaiUsage = await call(zaiRoute, 'GET', '/dsh-tidecost/api/session/session-zai/usage')
+check('Z.ai 会话：按量计费档位与 USD→CNY 折算', () => {
+  const u = zaiUsage.json.usage
+  assert.equal(u.steps[0].provider, 'zai')
+  assert.equal(u.steps[0].tier, 'flat') // 即使处在 DeepSeek 峰价时段也按量计费
+  assert.equal(u.lastProvider, 'zai')
+  const usd = (1000 * 0.15 + 100 * 0.5 + 2000 * 0.03) / 1e6
+  assert.ok(Math.abs(u.totalCostCny - usd * 7.1) < 1e-12, `cost=${u.totalCostCny}`)
+})
+
+const dsSession = {
+  id: 'session-ds',
+  requestContext: () => ({ provider: 'deepseek-official', model: 'deepseek-flash' }),
+  snapshotEvents: () => [
+    { type: 'request/context', seq: 0, time: T, data: { provider: 'deepseek-official', model: 'deepseek-flash' } },
+    { type: 'assistant/message', seq: 1, time: T, data: { turn: 1, step: 1, message: {}, usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 2000, cacheWriteTokens: 0 } } },
+  ],
+}
+const dsRoute = setup({ dataDir: mkdtempSync(join(tmpdir(), 'dshb-ds-')), sessionsGet: (id) => (id === 'session-ds' ? dsSession : undefined) })
+const dsUsage = await call(dsRoute, 'GET', '/dsh-tidecost/api/session/session-ds/usage')
+check('DeepSeek 会话：仍走峰谷档位（09:30 峰价）', () => {
+  const u = dsUsage.json.usage
+  assert.equal(u.steps[0].provider, 'deepseek-official')
+  assert.equal(u.steps[0].tier, 'peak')
+  const cny = (1000 * 2.0 + 100 * 8.0 + 2000 * 0.04) / 1e6 // 2026-09-10 起 Flash 峰价：2 / 8 / 0.04
+  assert.ok(Math.abs(u.totalCostCny - cny) < 1e-12, `cost=${u.totalCostCny}`)
 })
 
 console.log(`\nPASS ${n} 项`)

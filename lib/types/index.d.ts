@@ -30,6 +30,8 @@ export interface Config {
     dataDir: string;
     /** 节假日北京日期名单（YYYY-MM-DD）；节假日全天谷价。可被 dataDir/holidays.json 覆盖。 */
     holidays: string[];
+    /** USD→CNY 汇率：把 Z.ai 等美元按量计费 provider 折合进 ¥ 预算/预警（缺省 7.1）。 */
+    usdCny: number;
 }
 export declare const Config: Config;
 export declare function apply(ctx: AppContext, config: Config): void;

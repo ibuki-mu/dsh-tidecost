@@ -9,12 +9,15 @@ import {
   beijingScheduleSegments,
   costCny,
   currentBeijingSegmentIndex,
+  flatPricesFor,
+  inferProvider,
   isHoliday,
   isPeakAt,
   isUtcWeekend,
   phaseAt,
   priceCny,
   priceEntryFor,
+  stepTier,
   tierAt,
 } from '../lib/shared/tide.js'
 
@@ -160,6 +163,30 @@ check('节假日全天谷价（host 名单）', () => {
   assert.equal(p.isHoliday, true)
   assert.equal(p.nextAtMs, iso('2026-09-14T01:00:00Z')) // 周一 09:00 北京
   assert.equal(currentBeijingSegmentIndex(fri, ['2026-09-11']), null)
+})
+
+
+check('Z.ai 按量计费（glm-5.3-flash，USD 折合 ¥）', () => {
+  // provider 推断：显式 zai / 按模型名 glm 推断 / deepseek 不受影响
+  assert.equal(inferProvider('zai', 'glm-5.3-flash'), 'zai')
+  assert.equal(inferProvider(undefined, 'glm-5.3-flash'), 'zai')
+  assert.equal(inferProvider(undefined, 'deepseek-flash'), 'deepseek')
+  // 官方按量计费单价（USD/1M tokens）
+  assert.deepEqual(flatPricesFor('zai', 'glm-5.3-flash'), { input: 0.15, cacheRead: 0.03, cacheWrite: 0, output: 0.5, currency: 'USD' })
+  // 按量计费无峰谷：峰时段也是 flat
+  assert.equal(stepTier('zai', 'glm-5.3-flash', iso('2026-08-17T01:30:00Z')), 'flat')
+  assert.equal(stepTier('deepseek-official', 'deepseek-flash', iso('2026-08-17T01:30:00Z')), 'peak')
+  // 费用：input*0.15 + output*0.5 + cacheRead*0.03，USD → ×7.1
+  const tokens = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 2000, cacheWriteTokens: 0 }
+  const usd = (1000 * 0.15 + 100 * 0.5 + 2000 * 0.03) / 1e6
+  const cny = costCny(tokens, 'glm-5.3-flash', iso('2026-08-17T01:30:00Z'), [], 'zai')
+  assert.ok(Math.abs(cny - usd * 7.1) < 1e-12, `cny=${cny}`)
+  // 汇率可覆盖
+  const cny6 = costCny(tokens, 'glm-5.3-flash', iso('2026-08-17T01:30:00Z'), [], 'zai', 6)
+  assert.ok(Math.abs(cny6 - usd * 6) < 1e-12)
+  // 未登记 provider：无按量表 → 回落 DeepSeek 峰谷兜底
+  assert.equal(flatPricesFor('openai', 'gpt-5'), null)
+  assert.equal(stepTier('openai', 'gpt-5', iso('2026-08-17T01:30:00Z')), 'peak')
 })
 
 console.log(`\nPASS ${n} 项`)

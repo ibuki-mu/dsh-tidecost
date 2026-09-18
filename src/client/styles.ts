@@ -65,6 +65,7 @@ export const styles = `
 .dshb-tier{font-size:9px;line-height:1.3;padding:0 3px;border-radius:4px;flex:none}
 .dshb-tier.peak{color:#e67e22;background:rgba(231,76,60,.12)}
 .dshb-tier.valley{color:#2ecc71;background:rgba(46,204,113,.12)}
+.dshb-tier.flat{color:#4a9eff;background:rgba(74,158,255,.14)}
 .dshb-total{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--theme-border,#333);padding-top:6px;margin-top:6px;font-weight:600}
 .dshb-budget-form{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .dshb-budget-form label{display:grid;gap:2px;font-size:10px;color:var(--theme-text-secondary,#888)}
