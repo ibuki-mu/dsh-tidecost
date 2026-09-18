@@ -2,7 +2,7 @@
 小孩子用ai做着玩的（x
 > DeepSeek Harness 侧边栏插件：**余额 / 峰谷价 / 逐步用量花费 / 预算预警** 一体化面板。
 >
-> ⚠️ **仅支持 DeepSeek API**（provider `deepseek-official`）。
+> 支持 **DeepSeek**（余额 + 峰谷价，官方人民币口径）与 **Z.ai**（按量计费，USD 按固定汇率折合 ¥）。
 >
 > 旧数据目录与浏览器内的旧设置键会**自动迁移**（见下文）。
 
@@ -10,13 +10,20 @@
 
 ## 支持范围与限制
 
-| 项 | 支持情况 |
+| Provider | 支持情况 |
 |---|---|
-| Provider | **仅 DeepSeek 官方 API**（`deepseek-official`）：余额接口 `GET /user/balance`、峰谷时段与价格纪年均来自 DeepSeek 官方口径 |
-| 模型 | `deepseek-flash`（V4.1）、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`；未知名模型按 **Flash 价兜底** |
-| 其他 provider（OpenAI / Anthropic / pi-ai / 自建网关等） | **不适用**：账户余额取的是 DeepSeek 账户；费用会按 Flash 兜底价估算，数值仅供参照、不代表实际账单 |
-| 图片 token | 以官方 `usage` 为准；`vision-exp` 的图片按官方像素折算规则计入 input |
-| 计费准确性 | 价格表内置官方公告口径；官方调价后需同步 `src/shared/tide.ts`，面板会提示价格可能过期 |
+| **DeepSeek**（`deepseek-official`） | **完整支持**：余额 `GET /user/balance`、峰谷时段、按调用时刻的价格纪年（人民币） |
+| **Z.ai**（`zai`） | **按量计费计价**：`glm-5.3-flash` 官方 USD 单价（输入 $0.15 / 缓存命中 $0.03 / 输出 $0.50 每 1M tokens；缓存写入限时免费），按 `usdCny`（默认 **7.1**）折合 ¥ 计入预算与预警；余额请在 Z.ai 控制台查看 |
+| 其他 provider（OpenAI / Anthropic / 自建网关等） | **不适用**：无定价表，费用按 DeepSeek Flash 兜底价估算，仅供参考 |
+
+| 项 | 说明 |
+|---|---|
+| DeepSeek 模型 | `deepseek-flash`（V4.1）、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`；未知名模型按 Flash 价兜底 |
+| Z.ai 模型 | `glm-5.3-flash`；同 provider 其他模型先用同价兜底，可在 `src/shared/tide.ts` 的 `FLAT_PRICES` 增补 |
+| 计价方式 | 每步按 **调用发生时刻** 计价：DeepSeek 走峰/谷/节假日价格纪年；Z.ai 为按量计费（无峰谷，标为 `flat` 档） |
+| 图片 token | 以供应商 `usage` 为准；`vision-exp` 图片按官方像素折算规则计入 input |
+| 汇率 | `usdCny`（Config，默认 7.1）仅用于把美元计费 provider 折合进 ¥ 预算/预警；改汇率不影响 token 计量 |
+| 计费准确性 | 价格内置官方公告口径；**官方调价后需同步 `src/shared/tide.ts`**。注：pi-ai 内置目录（coding 端点）标注的 GLM-5.3-Flash 价为按量价的 5 折，本插件按**按量计费全价**计算 |
 
 ## 功能
 
@@ -27,6 +34,7 @@
 | 峰谷价提醒 | 当前档位（峰价 ×2 / 谷价 ×0.5）、距下一档倒计时、北京时间时段表、档位翻转自动提醒 |
 | 对话前确认 | **峰价时段每日首次**对话前弹窗确认（可开关、可当日不再提醒；周末/节假日不弹） |
 | 预算 | 会话预算**按会话隔离**；月度预算 / 余额预警线 / 预警比例全局；超预算或接近上限时预警 |
+| 多 Provider 计价 | DeepSeek（峰谷价格纪年）+ Z.ai（按量计费，USD 折合 ¥）；逐步明细标注 provider 与档位（峰/谷/按量） |
 | Agent 工具 | `dsh_balance`：快速查询余额、会话花费、峰谷档位与预警 |
 
 ## 官方峰谷价与价格纪年
@@ -68,6 +76,7 @@ dsh plugin --profile web add link:/path/to/dsh-tidecost
 | `apiBaseUrl` | `https://api.deepseek.com` | 余额接口基址（不用于模型调用） |
 | `balanceCacheMs` | `60000` | 余额缓存时长 |
 | `holidays` | `[]` | 节假日北京日期名单（YYYY-MM-DD）；`holidays.json` 优先 |
+| `usdCny` | `7.1` | USD→CNY 汇率：把 Z.ai 等美元计费 provider 折合进 ¥ 预算/预警 |
 | `dataDir` | `$DSH_HOME/dsh-tidecost` | 数据目录（旧 dsh-balance 自动迁移） |
 
 数据文件（均在 `dataDir`）：

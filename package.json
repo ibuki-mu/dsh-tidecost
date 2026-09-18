@@ -1,7 +1,7 @@
 {
   "name": "dsh-tidecost",
   "version": "0.1.0",
-  "description": "仅支持 DeepSeek API 的 DSH 侧边栏：余额 / 峰谷价提醒 / 逐步 token 花费 / 会话预算预警",
+  "description": "DSH 侧边栏：DeepSeek 余额/峰谷价 + Z.ai 按量计费 · 逐步 token 花费 · 会话预算预警",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
