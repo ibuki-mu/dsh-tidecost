@@ -547,8 +547,8 @@ function BalanceTrigger({ wide, useSessions }: BalanceTriggerProps) {
               </div>
             )}
             <div className="dshb-hint" style={{ marginTop: 2 }}>
-              支持 <b>DeepSeek</b>（余额 / 峰谷价，官方人民币口径）与 <b>Z.ai</b>（按量计费，
-              USD 按固定汇率折合 ¥）。其他 provider 无定价表，费用为 Flash 兜底估算，仅供参考。
+              支持 <b>DeepSeek</b>（余额 / 峰谷价）与 <b>Z.ai</b>（按量计费：输入 ¥0.8 / 缓存命中 ¥0.23 /
+              输出 ¥2.8 每 1M tokens）。其他 provider 无定价表，费用为 Flash 兜底估算，仅供参考。
             </div>
           </div>
         </div>

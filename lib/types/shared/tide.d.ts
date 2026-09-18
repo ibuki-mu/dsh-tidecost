@@ -48,7 +48,7 @@ export type TideTier = 'legacy' | 'peak' | 'valley' | 'flat';
 export declare const PRICE_TABLE_CNY: Record<string, ModelPriceEntry>;
 /** 模型名归一化匹配（精确 → 互相包含 → flash/pro 关键字），未命中返回 Flash 兜底。 */
 export declare function priceEntryFor(model: string | undefined): ModelPriceEntry;
-/** USD→CNY 折算默认汇率（用于把美元计费 provider 折合进 ¥ 预算/预警；Config.usdCny 可覆盖）。 */
+/** USD→CNY 折算默认汇率：仅用于**美元计价**的 provider（当前 DeepSeek / Z.ai 均为官方人民币价，不换算）。 */
 export declare const USD_CNY_DEFAULT = 7.1;
 export type PriceCurrency = 'CNY' | 'USD';
 /** 按量计费单价（每百万 token，原币）。 */
@@ -62,12 +62,15 @@ export interface FlatPrices {
 /**
  * 非 DeepSeek provider 的按量计费表（provider → model → 单价，`*` 为该 provider 兜底）。
  *
- * 来源：Z.ai 官方定价页（docs.z.ai/guides/overview/pricing，USD / 1M tokens，按量计费）：
- *   GLM-5.3-Flash：输入 $0.15 / 缓存命中 $0.03 / 输出 $0.50（缓存写入限时免费 → 0）
- * 注：pi-ai 内置目录（coding 端点）标的同模型价恰为按量价的一半；若你走 coding 套餐
- * 折扣价，可用 Config.prices 覆盖（见 README）。
+ * 来源：**官方人民币定价**（Z.ai「GLM-5.3-Flash」页面，元 / 1M tokens，按量计费）：
+ *   输入 ¥0.8 / 输出 ¥2.8 / 缓存命中 ¥0.23 / 缓存存储限时免费（→ 0）
+ * 说明：官方另有美元定价页（$0.15 / $0.50 / $0.03），两者并非按汇率换算关系；
+ * 本插件优先采用**人民币官方价**，与账户人民币账单一致，无需汇率折算。
+ * （pi-ai 内置目录里的 cost 字段与官方定价不一致，不作为依据。）
  */
 export declare const FLAT_PRICES: Record<string, Record<string, FlatPrices>>;
+/** 原币金额 → 人民币（USD 按 usdCny 折算；CNY 原样返回）。 */
+export declare function toCny(amount: number, currency: PriceCurrency, usdCny?: number): number;
 /** provider 归一化：显式给出优先；缺省时按模型名推断。 */
 export declare function inferProvider(provider: string | undefined, model: string | undefined): string;
 /**
@@ -112,8 +115,8 @@ export declare function priceCny(model: string | undefined, atMs: number, holida
  * 一次调用的成本（人民币口径）。
  *
  * - DeepSeek（provider=deepseek / 缺省且模型名含 deepseek）：按官方峰谷价格纪年，返回 ¥。
- * - 其他已登记 provider（如 zai）：按按量计费表（原币）计价，USD 按 `usdCny` 折合 ¥，
- *   使预算/预警可用同一口径。
+ * - 其他已登记 provider（如 zai）：按按量计费表计价（官方人民币价直接使用；
+ *   若某 provider 标注为 USD 则按 `usdCny` 折合 ¥），使预算/预警同口径。
  * - 未知 provider/model：回落 DeepSeek Flash 兜底价（仅参照）。
  *
  * @param tokens - { inputTokens, outputTokens, cacheReadTokens?, cacheWriteTokens? }

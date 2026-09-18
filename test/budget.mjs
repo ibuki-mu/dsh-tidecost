@@ -172,13 +172,14 @@ const zaiSession = {
 }
 const zaiRoute = setup({ dataDir: mkdtempSync(join(tmpdir(), 'dshb-zai-')), sessionsGet: (id) => (id === 'session-zai' ? zaiSession : undefined) })
 const zaiUsage = await call(zaiRoute, 'GET', '/dsh-tidecost/api/session/session-zai/usage')
-check('Z.ai 会话：按量计费档位与 USD→CNY 折算', () => {
+check('Z.ai 会话：按量计费档位与官方人民币价', () => {
   const u = zaiUsage.json.usage
   assert.equal(u.steps[0].provider, 'zai')
   assert.equal(u.steps[0].tier, 'flat') // 即使处在 DeepSeek 峰价时段也按量计费
   assert.equal(u.lastProvider, 'zai')
-  const usd = (1000 * 0.15 + 100 * 0.5 + 2000 * 0.03) / 1e6
-  assert.ok(Math.abs(u.totalCostCny - usd * 7.1) < 1e-12, `cost=${u.totalCostCny}`)
+  // 官方人民币价：输入 0.8 / 输出 2.8 / 缓存命中 0.23（元/1M）
+  const cny = (1000 * 0.8 + 100 * 2.8 + 2000 * 0.23) / 1e6
+  assert.ok(Math.abs(u.totalCostCny - cny) < 1e-12, `cost=${u.totalCostCny}`)
 })
 
 const dsSession = {

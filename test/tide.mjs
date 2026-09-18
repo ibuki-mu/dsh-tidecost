@@ -19,6 +19,7 @@ import {
   priceEntryFor,
   stepTier,
   tierAt,
+  toCny,
 } from '../lib/shared/tide.js'
 
 const iso = (s) => Date.parse(s)
@@ -166,24 +167,25 @@ check('节假日全天谷价（host 名单）', () => {
 })
 
 
-check('Z.ai 按量计费（glm-5.3-flash，USD 折合 ¥）', () => {
+check('Z.ai 按量计费（glm-5.3-flash，官方人民币价）', () => {
   // provider 推断：显式 zai / 按模型名 glm 推断 / deepseek 不受影响
   assert.equal(inferProvider('zai', 'glm-5.3-flash'), 'zai')
   assert.equal(inferProvider(undefined, 'glm-5.3-flash'), 'zai')
   assert.equal(inferProvider(undefined, 'deepseek-flash'), 'deepseek')
-  // 官方按量计费单价（USD/1M tokens）
-  assert.deepEqual(flatPricesFor('zai', 'glm-5.3-flash'), { input: 0.15, cacheRead: 0.03, cacheWrite: 0, output: 0.5, currency: 'USD' })
+  // 官方人民币单价（元/1M tokens）：输入 0.8 / 缓存命中 0.23 / 缓存存储免费 / 输出 2.8
+  assert.deepEqual(flatPricesFor('zai', 'glm-5.3-flash'), { input: 0.8, cacheRead: 0.23, cacheWrite: 0, output: 2.8, currency: 'CNY' })
   // 按量计费无峰谷：峰时段也是 flat
   assert.equal(stepTier('zai', 'glm-5.3-flash', iso('2026-08-17T01:30:00Z')), 'flat')
   assert.equal(stepTier('deepseek-official', 'deepseek-flash', iso('2026-08-17T01:30:00Z')), 'peak')
-  // 费用：input*0.15 + output*0.5 + cacheRead*0.03，USD → ×7.1
+  // 费用直接用人民币价，不经过汇率
   const tokens = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 2000, cacheWriteTokens: 0 }
-  const usd = (1000 * 0.15 + 100 * 0.5 + 2000 * 0.03) / 1e6
-  const cny = costCny(tokens, 'glm-5.3-flash', iso('2026-08-17T01:30:00Z'), [], 'zai')
-  assert.ok(Math.abs(cny - usd * 7.1) < 1e-12, `cny=${cny}`)
-  // 汇率可覆盖
-  const cny6 = costCny(tokens, 'glm-5.3-flash', iso('2026-08-17T01:30:00Z'), [], 'zai', 6)
-  assert.ok(Math.abs(cny6 - usd * 6) < 1e-12)
+  const cny = (1000 * 0.8 + 100 * 2.8 + 2000 * 0.23) / 1e6
+  assert.ok(Math.abs(costCny(tokens, 'glm-5.3-flash', iso('2026-08-17T01:30:00Z'), [], 'zai') - cny) < 1e-12)
+  assert.ok(Math.abs(costCny(tokens, 'glm-5.3-flash', iso('2026-08-17T01:30:00Z'), [], 'zai', 6) - cny) < 1e-12) // 汇率不影响人民币价
+  // 汇率换算（供未来美元计价 provider）
+  assert.equal(toCny(1, 'CNY', 7.1), 1)
+  assert.equal(toCny(1, 'USD', 7.1), 7.1)
+  assert.equal(toCny(1, 'USD', 0), 7.1) // 非法汇率回落默认
   // 未登记 provider：无按量表 → 回落 DeepSeek 峰谷兜底
   assert.equal(flatPricesFor('openai', 'gpt-5'), null)
   assert.equal(stepTier('openai', 'gpt-5', iso('2026-08-17T01:30:00Z')), 'peak')
